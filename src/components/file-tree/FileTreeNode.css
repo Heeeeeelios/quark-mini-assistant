@@ -1,0 +1,70 @@
+.file-tree-node__row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px 4px 0;
+  cursor: pointer;
+  border-radius: 4px;
+  margin: 0 4px;
+  transition: background-color 0.12s, transform 0.08s;
+  user-select: none;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.file-tree-node__row:hover {
+  background-color: var(--color-brand-light);
+}
+
+.file-tree-node__row:active {
+  transform: scale(0.99);
+}
+
+.file-tree-node__row--selected {
+  background-color: var(--color-brand-light);
+  color: var(--color-brand);
+  font-weight: 500;
+  border-left: 2px solid var(--color-brand);
+  padding-left: calc(8px - 2px);
+}
+
+.file-tree-node__icon {
+  font-size: 14px;
+  flex-shrink: 0;
+  width: 18px;
+  text-align: center;
+  transition: transform 0.15s;
+}
+
+.file-tree-node__chevron {
+  font-size: 10px;
+  color: var(--color-text-placeholder);
+  flex-shrink: 0;
+  width: 12px;
+  text-align: center;
+  transition: transform 0.15s;
+}
+
+.file-tree-node__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* ---- Children expand/collapse animation ---- */
+.file-tree-node__children {
+  overflow: hidden;
+  animation: tree-expand 0.2s ease-out;
+}
+
+@keyframes tree-expand {
+  from {
+    opacity: 0;
+    max-height: 0;
+  }
+  to {
+    opacity: 1;
+    max-height: 2000px;
+  }
+}

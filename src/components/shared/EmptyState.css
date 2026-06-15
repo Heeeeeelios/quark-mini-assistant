@@ -1,0 +1,27 @@
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  gap: 8px;
+  padding: var(--spacing-xl);
+  text-align: center;
+  color: var(--color-text-placeholder);
+}
+
+.empty-state__icon {
+  font-size: 32px;
+  opacity: 0.5;
+}
+
+.empty-state__message {
+  font-size: 14px;
+  margin: 0;
+}
+
+.empty-state__hint {
+  font-size: 12px;
+  margin: 0;
+  opacity: 0.7;
+}

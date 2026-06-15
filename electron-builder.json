@@ -1,0 +1,52 @@
+{
+  "appId": "com.quark.mini-assistant",
+  "productName": "夸克 Mini 助手",
+  "copyright": "Copyright © 2026 Quark",
+  "directories": {
+    "output": "release",
+    "buildResources": "build"
+  },
+  "files": [
+    "dist/**/*",
+    "dist-electron/**/*",
+    "!**/node_modules/**/*.map",
+    "!**/.gitignore",
+    "!**/.env*"
+  ],
+  "asar": true,
+  "extraResources": [
+    {
+      "from": ".env.example",
+      "to": ".env.example"
+    }
+  ],
+  "win": {
+    "target": [
+      {
+        "target": "nsis",
+        "arch": ["x64"]
+      }
+    ],
+    "icon": "build/icon.ico",
+    "artifactName": "${productName}-${version}-Setup.${ext}"
+  },
+  "nsis": {
+    "oneClick": false,
+    "perMachine": true,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "夸克 Mini 助手"
+  },
+  "linux": {
+    "target": ["AppImage"],
+    "icon": "build/icon.png",
+    "category": "Utility",
+    "artifactName": "${productName}-${version}.${ext}"
+  },
+  "mac": {
+    "target": ["dmg"],
+    "icon": "build/icon.icns",
+    "category": "public.app-category.productivity"
+  }
+}

@@ -1,0 +1,22 @@
+.file-tree {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 4px 0;
+}
+
+.file-tree-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  gap: 8px;
+  color: var(--color-text-placeholder);
+  font-size: 13px;
+}
+
+.file-tree-empty__icon {
+  font-size: 32px;
+  opacity: 0.5;
+}
