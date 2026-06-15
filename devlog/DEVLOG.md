@@ -622,4 +622,39 @@
 5. **单元测试** — 为核心模块（AIService、file-reader、store）编写测试，保证代码质量可度量
 6. **暗色主题切换** — 当前只有亮色主题，暗色主题更适合长时间使用，且是评审中常见的加分项
 7. **性能优化** — 大文件树（>1000项）的虚拟滚动、对话历史的分页加载、AI 分析结果的本地缓存持久化
+
+---
+
+### [2026-06-16] 用户内 API Key 设置（Post-T12 新增功能）
+**Prompt摘要**：打包后的 .exe 无法读取项目目录的 .env 文件，需要在应用内支持配置 API Key。实现：点击"未配置 API Key"提示弹出设置弹窗 → 用户粘贴 Key → 保存到 userData/config.json → 主进程读取优先级 userData > .env > 空 → 保存后立即生效无需重启。
+
+**执行过程**：
+- 新建 `electron/config/key-store.ts` — Key 持久化模块：
+  - `readConfig()` / `writeConfig()` — 读写 `app.getPath('userData')/config.json`
+  - `getApiKey()` — 优先级：userData/config.json > .env > null
+  - `saveApiKey(key)` — 写入 config.json
+  - `removeApiKey()` — 从 config.json 删除
+- 修改 `electron/config/env.ts` — 改为从 key-store 重新导出 `getApiKey`
+- 修改 `electron/main.ts` — 新增 IPC handlers：
+  - `save-api-key` — 保存 Key → 重新初始化 AIService
+  - `remove-api-key` — 删除 Key
+- 修改 `electron/preload.ts` — 暴露 `saveApiKey` / `removeApiKey`
+- 修改 `src/api/index.ts` — WindowApi 类型更新
+- 新建 `src/components/shared/SettingsModal.tsx/.css` — API Key 设置弹窗：
+  - 输入框（等宽字体，方便粘贴 Key）
+  - Ctrl+Enter 保存，Escape 关闭
+  - 保存成功后 800ms 自动关闭
+  - 动画：fade-in 遮罩 + slide-up 弹窗
+- 修改 `src/components/ai-panel/AIPanel.tsx/.css` — 集成 SettingsModal：
+  - "未配置 API Key" 提示改为可点击按钮
+  - 点击弹出 SettingsModal
+  - 保存后 `setApiAvailability(true)` 立即生效
+
+**遇到的问题**：无重大问题。
+
+**决策记录**：
+- **userData/config.json 优先于 .env** — 打包后的应用无法访问项目目录的 .env，userData 是 Electron 标准用户数据目录，跨平台可用
+- **保存后立即重新初始化 AIService** — 无需重启应用，用户体验更好
+- **等宽字体输入框** — API Key 通常是 `sk-` 开头的长字符串，等宽字体方便核对
+- **Ctrl+Enter 快捷键保存** — 减少鼠标操作，符合开发者习惯
 - **分析结果用卡片式布局** — 白底圆角+浅阴影，视觉层次清晰，评审体验好

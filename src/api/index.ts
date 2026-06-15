@@ -12,6 +12,8 @@ interface SelectDirectoryResult {
 
 interface WindowApi {
   checkApiKey: () => Promise<{ configured: boolean }>;
+  saveApiKey: (key: string) => Promise<{ success: boolean }>;
+  removeApiKey: () => Promise<void>;
   selectDirectory: () => Promise<SelectDirectoryResult | null>;
   getFileMeta: (fileId: string) => Promise<unknown>;
   analyzeFile: (fileId: string) => Promise<AnalysisResult | { error: ApiError }>;

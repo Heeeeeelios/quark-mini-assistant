@@ -35,6 +35,14 @@ contextBridge.exposeInMainWorld('api', {
   checkApiKey: (): Promise<{ configured: boolean }> =>
     ipcRenderer.invoke('check-api-key'),
 
+  // F5: 保存API Key（到 userData/config.json）
+  saveApiKey: (key: string): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke('save-api-key', key),
+
+  // F5: 移除API Key
+  removeApiKey: (): Promise<void> =>
+    ipcRenderer.invoke('remove-api-key'),
+
   // F1: 选择目录并返回文件树
   selectDirectory: (): Promise<{ nodes: FileNode[]; truncated: boolean } | null> =>
     ipcRenderer.invoke('select-directory'),

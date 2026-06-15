@@ -5,6 +5,7 @@ import { useStore, findFileNode } from '../../store';
 import { useAnalyze } from '../../hooks/useAnalyze';
 import LoadingSpinner from '../shared/LoadingSpinner';
 import EmptyState from '../shared/EmptyState';
+import SettingsModal from '../shared/SettingsModal';
 import AnalysisResult from './AnalysisResult';
 import ChatInput from './ChatInput';
 import ChatMessages from './ChatMessages';
@@ -43,6 +44,7 @@ export default function AIPanel({
 
   const { analyze, isAnalyzing, analyzingFileId, analyzeError, getCachedResult } = useAnalyze();
   const [showDebug, setShowDebug] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   const selectedFile = useMemo(
     () => (selectedFileId ? findFileNode(fileTree, selectedFileId) : null),
@@ -59,6 +61,21 @@ export default function AIPanel({
       setApiAvailability(configured);
     });
   }, [setApiAvailability]);
+
+  const handleOpenSettings = useCallback(() => {
+    setShowSettings(true);
+  }, []);
+
+  const handleSaveApiKey = useCallback(
+    async (key: string): Promise<boolean> => {
+      const result = await window.api.saveApiKey(key);
+      if (result.success) {
+        setApiAvailability(true);
+      }
+      return result.success;
+    },
+    [setApiAvailability],
+  );
 
   // Auto-start conversation when file is selected (if different from current)
   useEffect(() => {
@@ -266,16 +283,23 @@ export default function AIPanel({
           disabled={!isApiAvailable}
         />
         {!isApiAvailable && (
-          <div className="ai-panel__no-api-hint">
-            ⚙️ 未配置 API Key
+          <button className="ai-panel__no-api-hint" onClick={handleOpenSettings}>
+            ⚙️ 未配置 API Key，点击设置
             <br />
             <span className="ai-panel__no-api-hint-detail">
-              在 <code>.env</code> 中设置 <code>DASHSCOPE_API_KEY</code>
-              可启用真实 AI 功能
+              点击此处粘贴你的 DashScope API Key
             </span>
-          </div>
+          </button>
         )}
       </div>
+
+      {/* Settings modal */}
+      <SettingsModal
+        isOpen={showSettings}
+        onClose={() => setShowSettings(false)}
+        onSave={handleSaveApiKey}
+        hasExistingKey={false}
+      />
     </div>
   );
 }

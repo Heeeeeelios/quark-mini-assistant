@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import path from 'path';
 import { readDirectory } from './services/file-reader';
 import { AIService, ApiError } from './services/ai-service';
-import { getApiKey, isApiKeyConfigured } from './config/env';
+import { getApiKey as getKeyFromStore, saveApiKey, removeApiKey } from './config/key-store';
 
 // __dirname is available in CommonJS (output of tsc)
 const ELECTRON_ROOT = __dirname;
@@ -39,9 +39,10 @@ function createWindow(): void {
 
 /**
  * Initialize the AI service on app ready.
+ * Uses getApiKey() which checks userData/config.json first, then .env.
  */
 function initAIService(): void {
-  const apiKey = getApiKey();
+  const apiKey = getKeyFromStore();
   if (apiKey) {
     aiService = new AIService(apiKey);
   }
@@ -67,7 +68,24 @@ app.on('window-all-closed', () => {
 // ---- IPC handlers ----
 
 ipcMain.handle('check-api-key', async (): Promise<{ configured: boolean }> => {
-  return { configured: isApiKeyConfigured() };
+  return { configured: getKeyFromStore() !== null };
+});
+
+ipcMain.handle('save-api-key', async (_event, key: string): Promise<{ success: boolean }> => {
+  const success = saveApiKey(key);
+  if (success) {
+    // Re-initialize AI service with new key
+    const newKey = getKeyFromStore();
+    if (newKey) {
+      aiService = new AIService(newKey);
+    }
+  }
+  return { success };
+});
+
+ipcMain.handle('remove-api-key', async (): Promise<void> => {
+  removeApiKey();
+  aiService = null;
 });
 
 ipcMain.handle('select-directory', async () => {
