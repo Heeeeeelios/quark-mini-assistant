@@ -237,13 +237,13 @@ ipcMain.handle('chat-completion', async (_event, params: { messages: Array<{ rol
     }
     mainWindow?.webContents.send('chat-done');
   } catch (err) {
-    console.error('[chat-completion] Raw error:', err);
-    console.error('[chat-completion] Error type:', typeof err);
-    console.error('[chat-completion] Error name:', err instanceof Error ? err.name : 'unknown');
-    console.error('[chat-completion] Error message:', err instanceof Error ? err.message : String(err));
-    console.error('[chat-completion] Error stack:', err instanceof Error ? err.stack : 'no stack');
+    const rawMessage = err instanceof Error ? err.message : String(err);
+    const rawStack = err instanceof Error ? err.stack : '';
+    console.error('[chat-completion] Raw error:', rawMessage);
+    console.error('[chat-completion] Stack:', rawStack);
 
-    let errorMsg = '对话失败';
+    // Use raw error message by default — user sees it directly in the UI
+    let errorMsg = rawMessage;
     if (err instanceof ApiError) {
       switch (err.code) {
         case 'AUTH_FAILED':
@@ -258,11 +258,8 @@ ipcMain.handle('chat-completion', async (_event, params: { messages: Array<{ rol
         case 'NETWORK_ERROR':
           errorMsg = '网络连接失败，请检查网络后重试';
           break;
-        default:
-          errorMsg = `对话失败：${err.message}`;
       }
     }
-    console.error('[chat-completion] Error:', errorMsg);
     mainWindow?.webContents.send('chat-done', errorMsg);
   }
 });

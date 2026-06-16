@@ -3,7 +3,8 @@ import { getMockAnalysisResult, getFallbackAnalysisResult } from './mock-analysi
 
 const DASHSCOPE_API = 'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions';
 const DEFAULT_MODEL = 'qwen-plus';
-const REQUEST_TIMEOUT = 15_000; // 15s
+const REQUEST_TIMEOUT = 15_000; // 15s — for simple requests
+const CHAT_TIMEOUT = 30_000; // 30s — for chat with tools (larger context + tool definitions)
 const MAX_RETRIES = 1;
 
 // ---- Tool definitions for function calling ----
@@ -380,6 +381,8 @@ export class AIService {
       messages: apiMessages,
       tools: TOOLS,
       temperature: 0.7,
+      max_tokens: 2000,
+      timeout: CHAT_TIMEOUT,
     });
 
     // If the model calls tools
@@ -536,6 +539,7 @@ export class AIService {
       messages,
       stream: true,
       temperature: 0.7,
+      timeout: CHAT_TIMEOUT,
     });
 
     for await (const chunk of response) {
@@ -552,7 +556,9 @@ export class AIService {
     stream?: boolean;
     temperature?: number;
     max_tokens?: number;
+    timeout?: number;
   }): Promise<ApiResponse> {
+    const timeout = params.timeout ?? REQUEST_TIMEOUT;
     for (let i = 0; i <= MAX_RETRIES; i++) {
       try {
         const response = await fetch(DASHSCOPE_API, {
@@ -562,7 +568,7 @@ export class AIService {
             Authorization: `Bearer ${this.apiKey}`,
           },
           body: JSON.stringify(params),
-          signal: AbortSignal.timeout(REQUEST_TIMEOUT),
+          signal: AbortSignal.timeout(timeout),
         });
 
         if (!response.ok) {
@@ -589,7 +595,9 @@ export class AIService {
     messages: ApiMessage[];
     stream: boolean;
     temperature?: number;
+    timeout?: number;
   }): AsyncGenerator<string> {
+    const timeout = params.timeout ?? REQUEST_TIMEOUT;
     for (let i = 0; i <= MAX_RETRIES; i++) {
       try {
         const response = await fetch(DASHSCOPE_API, {
@@ -599,7 +607,7 @@ export class AIService {
             Authorization: `Bearer ${this.apiKey}`,
           },
           body: JSON.stringify(params),
-          signal: AbortSignal.timeout(REQUEST_TIMEOUT),
+          signal: AbortSignal.timeout(timeout),
         });
 
         if (!response.ok) {
