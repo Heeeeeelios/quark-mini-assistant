@@ -220,6 +220,59 @@ export class AIService {
 
   // ---- F3: File analysis ----
 
+  /**
+   * Analyze a file using content passed directly (no fileCache dependency).
+   * This is the primary entry point used by the IPC handler.
+   */
+  async analyzeFileWithContent(fileId: string, ext: string, content: string | null): Promise<AnalysisResult> {
+    const startTime = Date.now();
+
+    try {
+      if (!content) {
+        // Binary file or read error — return a generic result
+        return {
+          summary: `该文件（${ext || '未知类型'}）暂不支持 AI 分析。目前支持文本文件（代码、文档、数据文件）的分析。`,
+          keyPoints: ['该文件为二进制格式或无法读取', '支持的文件类型：.txt .md .js .ts .py .json .csv 等'],
+          analysisTimeMs: 0,
+          source: 'mock',
+        };
+      }
+
+      const systemPrompt = this.getSystemPromptForExt(ext);
+
+      console.log(`[analyzeFileWithContent] fileId=${fileId}, ext=${ext}, contentLength=${content.length}`);
+
+      const messages: ApiMessage[] = [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: `【文件内容】\n${content}` },
+      ];
+
+      console.log('[analyzeFileWithContent] Request messages:', JSON.stringify(messages.map(m => ({
+        role: m.role,
+        content: m.content.length > 100 ? m.content.slice(0, 100) + '...' : m.content,
+      }))));
+
+      const response = await this.fetchWithRetry({
+        model: this.model,
+        messages,
+        temperature: 0.3,
+        max_tokens: 800,
+      });
+
+      console.log('[analyzeFileWithContent] Response received, content length:', response.choices?.[0]?.message?.content?.length ?? 0);
+
+      const result = this.parseAnalysisResponse(response.choices?.[0]?.message?.content ?? '');
+      result.analysisTimeMs = Date.now() - startTime;
+      return result;
+    } catch (err) {
+      console.error('[ai-service] analyzeFileWithContent error:', err);
+      return this.fallbackAnalysis();
+    }
+  }
+
+  /**
+   * Legacy method: analyze from fileCache (kept for compatibility).
+   */
   async analyzeFile(fileId: string): Promise<AnalysisResult> {
     const startTime = Date.now();
 
@@ -429,6 +482,23 @@ export class AIService {
 
   // ---- System prompt by file type ----
 
+  /**
+   * Get system prompt based on file extension (used when content is passed directly).
+   */
+  private getSystemPromptForExt(ext: string): string {
+    const codeExts = new Set(['.js', '.ts', '.jsx', '.tsx', '.mjs', '.cjs', '.py', '.java', '.go', '.rs', '.rb', '.php', '.swift', '.kt', '.scala', '.c', '.cpp', '.h', '.cs', '.dart', '.lua', '.pl', '.sh', '.bash', '.zsh', '.fish', '.ps1']);
+    const textExts = new Set(['.txt', '.md', '.log', '.markdown', '.rst', '.adoc', '.xml', '.html', '.css', '.scss', '.less', '.ini', '.cfg', '.conf', '.env', '.properties', '.yaml', '.yml', '.toml', '.graphql', '.proto', '.thrift', '.svg']);
+    const dataExts = new Set(['.json', '.csv', '.sql', '.tsv', '.parquet']);
+
+    if (codeExts.has(ext)) return PROMPT_TEMPLATES.code;
+    if (textExts.has(ext)) return PROMPT_TEMPLATES.text;
+    if (dataExts.has(ext)) return PROMPT_TEMPLATES.data;
+    return DEFAULT_PROMPT;
+  }
+
+  /**
+   * Get system prompt based on FileNode (legacy, uses fileType from cache).
+   */
   private getSystemPromptForFile(node?: FileNode): string {
     if (!node) return DEFAULT_PROMPT;
     return PROMPT_TEMPLATES[node.fileType] ?? DEFAULT_PROMPT;

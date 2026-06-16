@@ -1,6 +1,8 @@
 import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import path from 'path';
+import fs from 'fs';
 import { readDirectory } from './services/file-reader';
+import type { FileNode } from './services/file-reader';
 import { AIService, ApiError } from './services/ai-service';
 import { getApiKey as getKeyFromStore, saveApiKey, removeApiKey } from './config/key-store';
 
@@ -9,6 +11,48 @@ const ELECTRON_ROOT = __dirname;
 
 let mainWindow: BrowserWindow | null = null;
 let aiService: AIService | null = null;
+
+// Persist loaded directory nodes so we can re-populate cache when AI service is recreated
+let currentNodes: FileNode[] = [];
+
+const MAX_CONTENT_LINES = 200;
+const TEXT_EXTENSIONS = new Set([
+  '.txt', '.md', '.log', '.json', '.csv', '.yaml', '.yml', '.toml',
+  '.js', '.ts', '.jsx', '.tsx', '.mjs', '.cjs',
+  '.py', '.java', '.go', '.rs', '.rb', '.php', '.swift', '.kt', '.scala',
+  '.c', '.cpp', '.h', '.cs', '.dart', '.lua', '.pl',
+  '.xml', '.html', '.css', '.scss', '.less',
+  '.sh', '.bash', '.zsh', '.fish', '.ps1',
+  '.ini', '.cfg', '.conf', '.env', '.properties',
+  '.sql', '.graphql', '.proto', '.thrift',
+  '.svg', '.rst', '.adoc', '.markdown',
+]);
+
+/**
+ * Read file content from disk for AI analysis.
+ * Returns null for binary files or read errors.
+ */
+function readFileContentForAnalysis(fileId: string): { content: string | null; ext: string } {
+  const ext = path.extname(fileId).toLowerCase();
+
+  if (!TEXT_EXTENSIONS.has(ext)) {
+    return { content: null, ext };
+  }
+
+  try {
+    const raw = fs.readFileSync(fileId, 'utf-8');
+    const lines = raw.split('\n');
+    if (lines.length > MAX_CONTENT_LINES) {
+      return {
+        content: lines.slice(0, MAX_CONTENT_LINES).join('\n'),
+        ext,
+      };
+    }
+    return { content: raw, ext };
+  } catch {
+    return { content: null, ext };
+  }
+}
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -45,6 +89,20 @@ function initAIService(): void {
   const apiKey = getKeyFromStore();
   if (apiKey) {
     aiService = new AIService(apiKey);
+    // Re-populate cache if directory was loaded before AI service init
+    if (currentNodes.length > 0) {
+      aiService.setFileCache(currentNodes);
+    }
+  }
+}
+
+/**
+ * Re-populate the AI service file cache with current directory nodes.
+ */
+function refreshFileCache(): void {
+  if (aiService && currentNodes.length > 0) {
+    aiService.setFileCache(currentNodes);
+    console.log(`[refreshFileCache] Re-populated cache with ${currentNodes.length} root nodes`);
   }
 }
 
@@ -78,6 +136,8 @@ ipcMain.handle('save-api-key', async (_event, key: string): Promise<{ success: b
     const newKey = getKeyFromStore();
     if (newKey) {
       aiService = new AIService(newKey);
+      // Re-populate file cache with previously loaded directory
+      refreshFileCache();
     }
   }
   return { success };
@@ -101,6 +161,9 @@ ipcMain.handle('select-directory', async () => {
   const selectedPath = result.filePaths[0];
   const dirResult = await readDirectory(selectedPath);
 
+  // Persist nodes for later cache re-population
+  currentNodes = dirResult.nodes;
+
   // Populate AI service file cache
   aiService?.setFileCache(dirResult.nodes);
 
@@ -114,7 +177,11 @@ ipcMain.handle('get-file-meta', async (_event, _fileId: string): Promise<unknown
 
 ipcMain.handle('analyze-file', async (_event, fileId: string): Promise<unknown> => {
   console.log('[analyze-file] Request received, fileId:', fileId);
-  console.log('[analyze-file] aiService:', aiService ? 'initialized' : 'null (no API key)');
+
+  // Read file content directly from disk — doesn't depend on fileCache
+  const { content, ext } = readFileContentForAnalysis(fileId);
+  console.log(`[analyze-file] Disk read: ext=${ext}, contentLength=${content?.length ?? 'null'}`);
+
   if (!aiService) {
     // No API key — return mock result
     console.log('[analyze-file] No API key configured, returning mock result');
@@ -127,7 +194,8 @@ ipcMain.handle('analyze-file', async (_event, fileId: string): Promise<unknown> 
   }
 
   try {
-    const result = await aiService.analyzeFile(fileId);
+    // Pass content directly — no dependency on fileCache
+    const result = await aiService.analyzeFileWithContent(fileId, ext, content);
     console.log('[analyze-file] AI service result:', result.source);
     return result;
   } catch (err) {

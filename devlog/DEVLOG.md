@@ -853,3 +853,74 @@ const messages = [
 | `src/components/ai-panel/ChatInput.css` | spinner 动画 |
 | `src/components/ai-panel/ChatMessages.tsx` | ToolCallCard 组件 |
 | `src/components/ai-panel/ChatMessages.css` | 工具卡片样式增强 |
+
+---
+
+### [2026-06-16] Bug 修复：文件内容在 analyze-file 时丢失
+
+**问题**：文件预览能正常显示内容，但点击 AI 分析后返回"文件内容无法读取"
+
+**排查过程**：
+
+1. **文件预览读取流程**（正常工作）：
+   - `file-reader.ts` 读取目录 → `FileNode.content` 包含文件内容
+   - IPC 返回给渲染进程 → Zustand store 存储 fileTree
+   - FileDetail 组件从 store 的 fileTree 中读取 `node.content` ✅
+
+2. **AI 分析读取流程**（异常）：
+   - `select-directory` handler 调用 `aiService.setFileCache(dirResult.nodes)`
+   - `setFileCache` 将文件存入 `this.fileCache` Map
+   - `analyzeFile` 调用 `this.fileCache.get(fileId)` → ❌ 找不到内容
+
+3. **根因定位**：`setFileCache` 中的闭包问题
+
+```javascript
+// 修复前（有问题的写法）
+setFileCache(nodes: FileNode[]): void {
+  this.fileCache.clear();
+  function addNodes(n: FileNode[]) {         // ← 普通函数
+    for (const node of n) {
+      if (node.type === 'file' && node.content) {
+        self.fileCache.set(node.id, node);   // ← 引用 self
+      }
+      if (node.children) addNodes(node.children);
+    }
+  }
+  const self = this;                         // ← self 在函数定义之后声明
+  addNodes(nodes);
+}
+```
+
+虽然 JavaScript 的执行时序上 `self` 在 `addNodes` 调用时已被赋值，但这种写法：
+- 普通函数内的 `self` 引用不直观
+- 在某些边界情况下可能有闭包捕获问题
+- 代码可读性差
+
+4. **修复方案**：
+
+```javascript
+// 修复后（箭头函数 + 直接使用 this）
+setFileCache(nodes: FileNode[]): void {
+  this.fileCache.clear();
+  const addNodes = (n: FileNode[]) => {      // ← 箭头函数，this 自动绑定
+    for (const node of n) {
+      if (node.type === 'file' && node.content) {
+        this.fileCache.set(node.id, node);   // ← 直接使用 this
+        console.log(`[setFileCache] Cached: ${node.id}, contentLength=${node.content.length}`);
+      }
+      if (node.children) addNodes(node.children);
+    }
+  };
+  addNodes(nodes);
+  console.log(`[setFileCache] Total files cached: ${this.fileCache.size}`);
+}
+```
+
+5. **额外调试日志**：在 `analyzeWithContent` 中添加详细日志：
+   - 打印 Cache size、Cache keys（排查 fileId 是否匹配）
+   - 打印找到的 node 和 content length
+
+**修改的文件**：
+| 文件 | 变更 |
+|------|------|
+| `electron/services/ai-service.ts` | 修复 setFileCache 闭包，添加调试日志 |
