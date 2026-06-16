@@ -24,6 +24,7 @@ interface WindowApi {
   }) => Promise<void>;
   onChatChunk: (callback: (chunk: string) => void) => () => void;
   onChatDone: (callback: (error?: string) => void) => () => void;
+  onToolCall: (callback: (event: { toolName: string; args: string }) => void) => () => void;
   windowMinimize: () => Promise<void>;
   windowClose: () => Promise<void>;
 }

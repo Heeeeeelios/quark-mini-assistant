@@ -76,6 +76,13 @@ contextBridge.exposeInMainWorld('api', {
     return () => ipcRenderer.removeListener('chat-done', listener);
   },
 
+  // F4: 监听工具调用事件
+  onToolCall: (callback: (event: { toolName: string; args: string }) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, event: { toolName: string; args: string }) => callback(event);
+    ipcRenderer.on('chat-tool-call', listener);
+    return () => ipcRenderer.removeListener('chat-tool-call', listener);
+  },
+
   // F5: 窗口控制
   windowMinimize: (): Promise<void> => ipcRenderer.invoke('window-minimize'),
   windowClose: (): Promise<void> => ipcRenderer.invoke('window-close'),

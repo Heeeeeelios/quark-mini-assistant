@@ -48,7 +48,18 @@ export function useAnalyze() {
         setAnalyzeError('响应格式异常，请检查控制台');
         console.error('Unexpected analyzeFile response:', response);
       } catch (err) {
-        const message = err instanceof Error ? err.message : '分析失败';
+        const raw = err instanceof Error ? err.message : '分析失败';
+        // Map error code to user-friendly message
+        let message = raw;
+        if (raw.includes('Key') || raw.includes('key') || raw.includes('验证')) {
+          message = 'API Key 验证失败，请在设置中检查 Key 是否正确';
+        } else if (raw.includes('网络') || raw.includes('connect')) {
+          message = '网络连接失败，请检查网络后重试';
+        } else if (raw.includes('超时') || raw.includes('timeout')) {
+          message = '请求超时，可能是文件过大或网络不稳定';
+        } else if (raw.includes('频率') || raw.includes('额度') || raw.includes('rate')) {
+          message = '请求频率过高或额度已用完，请稍后再试';
+        }
         setAnalyzeError(message);
         console.error('analyzeFile error:', err);
       }

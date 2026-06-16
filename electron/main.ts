@@ -132,17 +132,33 @@ ipcMain.handle('analyze-file', async (_event, fileId: string): Promise<unknown> 
     return result;
   } catch (err) {
     console.error('[analyze-file] AI service error:', err);
+    let errorMsg = '分析失败';
     if (err instanceof ApiError) {
-      return { error: { code: err.code, message: err.message } };
+      switch (err.code) {
+        case 'AUTH_FAILED':
+          errorMsg = 'API Key 验证失败，请在设置中检查 Key 是否正确';
+          break;
+        case 'RATE_LIMIT':
+          errorMsg = '请求频率过高或额度已用完，请稍后再试';
+          break;
+        case 'TIMEOUT':
+          errorMsg = '请求超时，可能是文件过大或网络不稳定';
+          break;
+        case 'NETWORK_ERROR':
+          errorMsg = '网络连接失败，请检查网络后重试';
+          break;
+        default:
+          errorMsg = `分析失败：${err.message}`;
+      }
     }
-    return { error: { code: 'UNKNOWN', message: '未知错误' } };
+    return { error: { code: 'ANALYSIS_FAILED', message: errorMsg } };
   }
 });
 
 ipcMain.handle('chat-completion', async (_event, params: { messages: Array<{ role: string; content: string }>; fileId: string; fileSummary: string }): Promise<void> => {
   if (!aiService) {
     // No API key — send mock response via event
-    mainWindow?.webContents.send('chat-chunk', '当前未配置 API Key，已切换至演示模式。');
+    mainWindow?.webContents.send('chat-chunk', '当前未配置 API Key，已切换至演示模式。此为 Mock 结果。');
     mainWindow?.webContents.send('chat-done');
     return;
   }
@@ -153,7 +169,26 @@ ipcMain.handle('chat-completion', async (_event, params: { messages: Array<{ rol
     }
     mainWindow?.webContents.send('chat-done');
   } catch (err) {
-    const errorMsg = err instanceof ApiError ? err.message : '对话失败';
+    let errorMsg = '对话失败';
+    if (err instanceof ApiError) {
+      switch (err.code) {
+        case 'AUTH_FAILED':
+          errorMsg = 'API Key 验证失败，请在设置中检查 Key 是否正确';
+          break;
+        case 'RATE_LIMIT':
+          errorMsg = '请求频率过高或额度已用完，请稍后再试';
+          break;
+        case 'TIMEOUT':
+          errorMsg = '请求超时，可能是文件过大或网络不稳定';
+          break;
+        case 'NETWORK_ERROR':
+          errorMsg = '网络连接失败，请检查网络后重试';
+          break;
+        default:
+          errorMsg = `对话失败：${err.message}`;
+      }
+    }
+    console.error('[chat-completion] Error:', errorMsg);
     mainWindow?.webContents.send('chat-done', errorMsg);
   }
 });

@@ -1,7 +1,6 @@
 import type { ReactElement } from 'react';
 import { useEffect, useMemo, useState, useCallback, useRef } from 'react';
-import type { FileNode } from '../../types';
-import type { AnalysisResult } from '../../types';
+import type { FileNode, AnalysisResult } from '../../types';
 import { useStore, findFileNode } from '../../store';
 import { useAnalyze } from '../../hooks/useAnalyze';
 import LoadingSpinner from '../shared/LoadingSpinner';
@@ -12,6 +11,29 @@ import ChatInput from './ChatInput';
 import ChatMessages from './ChatMessages';
 import PromptDebugPanel from './PromptDebugPanel';
 import './AIPanel.css';
+
+// ---- Error code mapping for user-friendly messages ----
+const ERROR_MESSAGES: Record<string, string> = {
+  'AUTH_FAILED': 'API Key 验证失败，请在设置中检查 Key 是否正确',
+  'RATE_LIMIT': '请求频率过高或额度已用完，请稍后再试',
+  'TIMEOUT': '请求超时，可能是文件过大或网络不稳定',
+  'NETWORK_ERROR': '网络连接失败，请检查网络后重试',
+  'API_ERROR': '服务端异常，请稍后再试',
+};
+
+function getErrorMessage(raw: string): string {
+  for (const [code, msg] of Object.entries(ERROR_MESSAGES)) {
+    if (raw.includes(code) || raw.toLowerCase().includes(code.toLowerCase().replace('_', ' '))) {
+      return msg;
+    }
+  }
+  // Check for specific patterns
+  if (raw.includes('Key') || raw.includes('key') || raw.includes('验证')) return ERROR_MESSAGES.AUTH_FAILED!;
+  if (raw.includes('网络') || raw.includes('connect') || raw.includes('fetch')) return ERROR_MESSAGES.NETWORK_ERROR!;
+  if (raw.includes('超时') || raw.includes('timeout')) return ERROR_MESSAGES.TIMEOUT!;
+  if (raw.includes('频率') || raw.includes('额度') || raw.includes('rate') || raw.includes('limit')) return ERROR_MESSAGES.RATE_LIMIT!;
+  return raw || '对话失败，请重试';
+}
 
 interface AIPanelProps {
   fileTree: FileNode[];
@@ -38,11 +60,14 @@ export default function AIPanel({
     finishAssistantMessage,
     addDebugEntry,
     clearToolCallEvents,
+    addToolCallEvent,
+    setAnalysisResult,
+    setAnalyzing,
+    setAnalyzeError,
   } = useStore();
 
   const {
-    analyze,
-    isAnalyzing,
+    isAnalyzing: isAnalyzeLoading,
     analyzingFileId,
     analyzeError,
     getCachedResult,
@@ -50,9 +75,10 @@ export default function AIPanel({
 
   const [showDebug, setShowDebug] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [streamedAnalysis, setStreamedAnalysis] = useState<Partial<AnalysisResult> | null>(null);
 
-  // For mock streaming: track the streamed content
-  const mockStreamRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const inputRef = useRef<{ focus: () => void; reset: () => void } | null>(null);
+  const mockIntervalsRef = useRef<ReturnType<typeof setInterval>[]>([]);
 
   const selectedFile = useMemo(
     () => (selectedFileId ? findFileNode(fileTree, selectedFileId) : null),
@@ -60,8 +86,10 @@ export default function AIPanel({
   );
 
   const cachedResult = selectedFileId ? getCachedResult(selectedFileId) : null;
-  const isLoading = isAnalyzing && analyzingFileId === selectedFileId;
+  const isLoading = (isAnalyzeLoading && analyzingFileId === selectedFileId) || !!streamedAnalysis;
+  const isChatting = isChatLoading;
   const isAnalyzable = selectedFile && ['text', 'code', 'data'].includes(selectedFile.fileType);
+  const isAnyLoading = isLoading || isChatting;
 
   // Check API key on mount
   useEffect(() => {
@@ -70,12 +98,18 @@ export default function AIPanel({
     });
   }, [setApiAvailability]);
 
-  // Cleanup mock stream on unmount
+  // Set up tool call listener
+  useEffect(() => {
+    const cleanup = window.api.onToolCall((event) => {
+      addToolCallEvent(event.toolName, event.args || '');
+    });
+    return cleanup;
+  }, [addToolCallEvent]);
+
+  // Cleanup intervals on unmount
   useEffect(() => {
     return () => {
-      if (mockStreamRef.current) {
-        clearTimeout(mockStreamRef.current);
-      }
+      mockIntervalsRef.current.forEach(clearInterval);
     };
   }, []);
 
@@ -94,22 +128,47 @@ export default function AIPanel({
     [setApiAvailability],
   );
 
-  // Wrap analyze to add mock streaming effect
+  // ---- AI Analysis with streaming ----
   const handleAnalyze = useCallback(
     async (fileId: string) => {
       if (!isAnalyzable) return;
 
+      // Clear previous streamed state
+      setStreamedAnalysis(null);
+
       // If no API key configured, simulate mock analysis with streaming
       if (!isApiAvailable) {
-        simulateMockAnalysis(fileId, selectedFile);
+        simulateMockAnalysis(fileId, selectedFile, setStreamedAnalysis, setAnalyzing, setAnalyzeError, mockIntervalsRef);
         return;
       }
 
-      // Real API call
-      await analyze(fileId);
+      // Real API call with existing useAnalyze hook
+      // (loading state handled by isAnalyzeLoading from useAnalyze)
+      try {
+        const response = await window.api.analyzeFile(fileId);
+
+        if (response && typeof response === 'object' && 'error' in response) {
+          setAnalyzeError(getErrorMessage(response.error.message || ''));
+          return;
+        }
+
+        if (response && typeof response === 'object' && 'summary' in response) {
+          setAnalysisResult(fileId, response as AnalysisResult);
+          return;
+        }
+
+        setAnalyzeError('响应格式异常');
+      } catch {
+        setAnalyzeError('分析失败，请重试');
+      }
     },
-    [isAnalyzable, isApiAvailable, analyze, selectedFile],
+    [isAnalyzable, isApiAvailable, selectedFile, setAnalysisResult, setAnalyzing, setAnalyzeError],
   );
+
+  // Clear analysis cache when file changes
+  useEffect(() => {
+    setStreamedAnalysis(null);
+  }, [selectedFileId]);
 
   // Auto-start conversation when file is selected
   useEffect(() => {
@@ -125,6 +184,7 @@ export default function AIPanel({
     }
   }, [selectedFileId, conversationFileId, selectedFile, startConversation, clearConversation, clearToolCallEvents]);
 
+  // ---- Chat send ----
   const handleSend = useCallback(
     async (text: string) => {
       if (!selectedFileId) return;
@@ -181,7 +241,7 @@ export default function AIPanel({
           cleanupChunk();
           cleanupDone();
           if (error) {
-            finishAssistantMessage(error);
+            finishAssistantMessage(getErrorMessage(error));
           } else {
             finishAssistantMessage();
           }
@@ -197,8 +257,14 @@ export default function AIPanel({
           fileSummary,
         });
       } catch (err) {
-        finishAssistantMessage(err instanceof Error ? err.message : '对话失败');
+        const raw = err instanceof Error ? err.message : '对话失败';
+        finishAssistantMessage(getErrorMessage(raw));
       }
+
+      // Focus input after sending
+      requestAnimationFrame(() => {
+        inputRef.current?.focus();
+      });
     },
     [
       selectedFileId,
@@ -219,7 +285,11 @@ export default function AIPanel({
   if (fileTree.length === 0) {
     return (
       <div className="ai-panel">
-        <EmptyState icon="🤖" message="请先选择一个文件夹" hint="AI 功能需要先选择包含文件的目录" />
+        <EmptyState
+          icon="🤖"
+          message="请先选择一个文件夹"
+          hint="AI 功能需要先选择包含文件的目录"
+        />
       </div>
     );
   }
@@ -228,7 +298,11 @@ export default function AIPanel({
   if (!selectedFile) {
     return (
       <div className="ai-panel">
-        <EmptyState icon="🤖" message="请在左侧选择一个文件" hint="选择文件后可进行 AI 分析" />
+        <EmptyState
+          icon="💡"
+          message="请先在左侧选择一个文件"
+          hint="选择文件后即可进行 AI 分析和对话"
+        />
       </div>
     );
   }
@@ -271,7 +345,7 @@ export default function AIPanel({
           <button
             className="ai-panel__analyze-btn"
             onClick={() => selectedFileId && handleAnalyze(selectedFileId)}
-            disabled={isLoading || !isAnalyzable}
+            disabled={isAnyLoading || !isAnalyzable}
           >
             {isLoading ? '分析中...' : '🔍 AI 分析'}
           </button>
@@ -281,7 +355,14 @@ export default function AIPanel({
       {/* Analysis result area */}
       {isLoading ? (
         <div className="ai-panel__analysis-area ai-panel__analysis-area--loading">
-          <LoadingSpinner label="AI 正在分析文件内容..." />
+          <LoadingSpinner label="🔍 AI 正在分析..." />
+          {streamedAnalysis && (
+            <div className="ai-panel__streaming-preview">
+              {streamedAnalysis.summary && (
+                <p className="ai-panel__streaming-text">{streamedAnalysis.summary}</p>
+              )}
+            </div>
+          )}
         </div>
       ) : analyzeError ? (
         <div className="ai-panel__analysis-area ai-panel__error">
@@ -311,8 +392,9 @@ export default function AIPanel({
           toolCallEvents={toolCallEvents}
         />
         <ChatInput
+          ref={inputRef}
           onSend={handleSend}
-          isLoading={isChatLoading || isAnalyzing}
+          isLoading={isAnyLoading}
           disabled={!isApiAvailable}
         />
       </div>
@@ -339,65 +421,105 @@ export default function AIPanel({
   );
 }
 
-/**
- * Simulate mock analysis with streaming-like typing effect.
- * Shows loading for 1.5s, then streams the mock result character by character.
- */
-function simulateMockAnalysis(fileId: string, file?: FileNode | null) {
-  // Import store actions directly for mock streaming
-  const { useStore } = require('../../store');
-  const store = useStore.getState();
+// ---- Mock analysis with streaming simulation ----
+interface MockAnalysisRefs {
+  current: ReturnType<typeof setInterval>[];
+}
 
-  // Step 1: Show loading
-  store.setAnalyzing(true, fileId);
-  store.setAnalyzeError(null);
+function simulateMockAnalysis(
+  fileId: string,
+  file: FileNode | null,
+  setStreamed: React.Dispatch<React.SetStateAction<Partial<AnalysisResult> | null>>,
+  setAnalyzing: (loading: boolean, id?: string) => void,
+  setAnalyzeError: (error: string | null) => void,
+  intervalsRef: MockAnalysisRefs,
+) {
+  setAnalyzing(true, fileId);
+  setAnalyzeError(null);
 
-  // Step 2: After 1.5s delay, start streaming mock result
-  const timeout = setTimeout(() => {
-    const mockTexts: Record<string, AnalysisResult> = {
-      code: {
-        summary: `这是一份代码文件（${file?.ext || '未知类型'}）。整体结构清晰，函数职责划分基本明确。建议增加注释说明关键逻辑，并考虑添加单元测试覆盖。`,
-        keyPoints: [
-          '代码结构基本清晰，函数职责划分合理',
-          '建议增加关键逻辑的注释说明',
-          '考虑添加单元测试覆盖核心功能',
-          '部分边界条件处理可以更加完善',
-        ],
-        analysisTimeMs: 1500,
+  const mockData: Record<string, { summary: string; keyPoints: string[] }> = {
+    code: {
+      summary: `这是一份代码文件（${file?.ext || '未知类型'}）。整体结构清晰，函数职责划分基本明确。`,
+      keyPoints: [
+        '代码结构基本清晰，函数职责划分合理',
+        '建议增加关键逻辑的注释说明',
+        '考虑添加单元测试覆盖核心功能',
+        '部分边界条件处理可以更加完善',
+      ],
+    },
+    text: {
+      summary: `这是一份文本文档。内容结构完整，逻辑清晰。`,
+      keyPoints: [
+        '文档结构完整，逻辑清晰',
+        '核心主题表达明确',
+        '建议补充更多细节和示例',
+        '可考虑增加目录或索引便于导航',
+      ],
+    },
+    data: {
+      summary: `这是一份数据文件（${file?.ext || '未知格式'}）。数据结构规范，字段定义明确。`,
+      keyPoints: [
+        '数据结构规范，字段定义明确',
+        '数据格式一致性良好',
+        '建议检查缺失值和异常数据',
+        '可考虑增加数据字典说明各字段含义',
+      ],
+    },
+  };
+
+  const fileType = file?.fileType ?? 'text';
+  const data = mockData[fileType] ?? mockData.text;
+
+  // Safety check (TypeScript strict mode)
+  if (!data) return null;
+
+  // Simulate streaming: show loading for 1s, then stream summary + keyPoints
+  const loadTimeout = setTimeout(() => {
+    // Start streaming the summary sentence by sentence
+    const sentences = data.summary.split('。').filter(Boolean).map(s => s + '。');
+    let summaryIndex = 0;
+    let currentSummary = '';
+    let keyPointIndex = 0;
+    let currentKeyPoints: string[] = [];
+
+    const interval = setInterval(() => {
+      // Stream summary first
+      if (summaryIndex < sentences.length) {
+        currentSummary += sentences[summaryIndex]!;
+        summaryIndex++;
+        setStreamed({ summary: currentSummary, keyPoints: [...currentKeyPoints], source: 'mock' });
+        return;
+      }
+
+      // Then stream key points one by one
+      if (keyPointIndex < data.keyPoints.length) {
+        currentKeyPoints.push(data.keyPoints[keyPointIndex]!);
+        keyPointIndex++;
+        setStreamed({ summary: currentSummary, keyPoints: [...currentKeyPoints], source: 'mock' });
+        return;
+      }
+
+      // Done streaming
+      clearInterval(interval);
+      const result: AnalysisResult = {
+        summary: currentSummary,
+        keyPoints: currentKeyPoints,
+        analysisTimeMs: 2000,
         source: 'mock',
-      },
-      text: {
-        summary: `这是一份文本文档。内容结构完整，逻辑清晰。文档涵盖了主要主题的核心信息，建议补充更多细节以增强可读性。`,
-        keyPoints: [
-          '文档结构完整，逻辑清晰',
-          '核心主题表达明确',
-          '建议补充更多细节和示例',
-          '可考虑增加目录或索引便于导航',
-        ],
-        analysisTimeMs: 1500,
-        source: 'mock',
-      },
-      data: {
-        summary: `这是一份数据文件（${file?.ext || '未知格式'}）。数据结构规范，字段定义明确。建议检查是否有缺失值或异常数据，并考虑增加数据字典说明。`,
-        keyPoints: [
-          '数据结构规范，字段定义明确',
-          '数据格式一致性良好',
-          '建议检查缺失值和异常数据',
-          '可考虑增加数据字典说明各字段含义',
-        ],
-        analysisTimeMs: 1500,
-        source: 'mock',
-      },
-    };
+      };
+      setStreamed(null);
+      setAnalyzing(false);
+      // We need to cache this result - but we can't call setAnalysisResult here
+      // Instead, we'll let the component handle it via the streamedAnalysis state
+      // For now, store it via a side effect
+      const { useStore } = require('../../store');
+      useStore.getState().setAnalysisResult(fileId, result);
+    }, 400);
 
-    const fileType = file?.fileType ?? 'text';
-    const result = mockTexts[fileType] ?? mockTexts.text;
+    intervalsRef.current.push(interval);
+  }, 1000);
 
-    // Step 3: Set the result directly (instant, no streaming needed for mock)
-    store.setAnalysisResult(fileId, result);
-  }, 1500);
-
-  return timeout;
+  intervalsRef.current.push(loadTimeout);
 }
 
 function getFileIcon(node: FileNode): string {

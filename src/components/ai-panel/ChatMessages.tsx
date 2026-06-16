@@ -16,7 +16,7 @@ export default function ChatMessages({
 }: ChatMessagesProps): ReactElement {
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll to bottom when messages change (smooth)
+  // Auto-scroll to bottom when messages or tool events change
   useEffect(() => {
     if (containerRef.current) {
       containerRef.current.scrollTo({
@@ -31,7 +31,7 @@ export default function ChatMessages({
 
   return (
     <div className="chat-messages" ref={containerRef}>
-      {displayMessages.length === 0 && (
+      {displayMessages.length === 0 && toolCallEvents.length === 0 && (
         <p className="chat-messages__empty">
           对文件进行 AI 分析后，可以开始对话
         </p>
@@ -41,13 +41,22 @@ export default function ChatMessages({
       ))}
       {/* Tool call events display */}
       {toolCallEvents.map((event, i) => (
-        <div key={i} className="chat-messages__tool-event">
-          <span className="chat-messages__tool-event-icon">⚙️</span>
-          <span className="chat-messages__tool-event-text">
-            正在调用 {event.toolName}...
-          </span>
-        </div>
+        <ToolCallCard key={i} event={event} />
       ))}
+    </div>
+  );
+}
+
+/**
+ * Display a tool call as a collapsible card in the chat area.
+ */
+function ToolCallCard({ event }: { event: ToolCallEvent }): ReactElement {
+  return (
+    <div className="chat-messages__tool-event">
+      <span className="chat-messages__tool-event-icon">🔧</span>
+      <span className="chat-messages__tool-event-text">
+        正在调用 <code>{event.toolName}</code>...
+      </span>
     </div>
   );
 }
