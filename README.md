@@ -2,8 +2,19 @@
 
 > 夸克 PC 桌面端 Mini 知识助手 — 基于 Electron 的本地文件 AI 分析与问答应用。
 
-<!-- TODO: 截图 -->
-<!-- ![功能截图](docs/screenshots/app-overview.png) -->
+## 功能展示
+
+### 文件浏览与预览
+![文件浏览](docs/screenshots/file-browser.png)
+
+### AI智能分析
+![AI分析](docs/screenshots/ai-analysis.png)
+
+### AI对话问答
+![AI对话](docs/screenshots/ai-chat.png)
+
+### API Key配置
+![设置](docs/screenshots/settings.png)
 
 ## 功能特性
 
