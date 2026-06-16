@@ -924,3 +924,52 @@ setFileCache(nodes: FileNode[]): void {
 | 文件 | 变更 |
 |------|------|
 | `electron/services/ai-service.ts` | 修复 setFileCache 闭包，添加调试日志 |
+
+---
+
+### [2026-06-16] AI 分析核心 Bug 修复：不依赖 fileCache，直接从磁盘读取
+
+**问题**：文件预览正常，但 AI 分析返回"文件内容无法读取"
+
+**根因分析**：
+
+```
+场景：用户先打开目录 → 后配置 API Key
+
+时间线：
+1. 打开目录时 aiService 为 null（无 API Key）→ setFileCache 被跳过 → fileCache 为空
+2. 配置 Key 后 save-api-key → new AIService() 创建新实例 → cache 仍为空
+3. 点击 AI 分析 → fileCache.get(fileId) → undefined → 无内容
+```
+
+**修复方案（根本性解决）**：
+
+**不再依赖 fileCache**，analyze-file handler 直接从磁盘读取文件内容：
+
+```typescript
+// main.ts — analyze-file handler
+const { content, ext } = readFileContentForAnalysis(fileId); // fs.readFileSync
+const result = await aiService.analyzeFileWithContent(fileId, ext, content);
+```
+
+**修改的文件**：
+
+| 文件 | 变更 |
+|------|------|
+| `electron/main.ts` | 新增 `readFileContentForAnalysis()` 直接读取磁盘；新增 `currentNodes` 持久化目录数据；`save-api-key` 重建 aiService 后自动重新填充 cache |
+| `electron/services/ai-service.ts` | 新增 `analyzeFileWithContent(fileId, ext, content)` 方法；新增 `getSystemPromptForExt(ext)` 按扩展名选择 prompt |
+
+**附带修复**：
+- `currentNodes` 变量确保 save-api-key 后目录数据可重新填充
+- `initAIService` 在启动时如果已有目录数据也会填充 cache
+
+**新的核心链路**：
+```
+用户点击 AI 分析
+→ main.ts: fs.readFileSync(fileId, 'utf-8') 直接读取
+→ 截断到前200行
+→ aiService.analyzeFileWithContent(fileId, ext, content)
+→ 按扩展名选择 prompt 模板（code/text/data）
+→ 拼接 system + user prompt → DashScope API
+→ 返回分析结果
+```

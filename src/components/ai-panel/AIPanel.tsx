@@ -133,8 +133,9 @@ export default function AIPanel({
     async (fileId: string) => {
       if (!isAnalyzable) return;
 
-      // Clear previous streamed state
+      // Clear previous streamed state and errors
       setStreamedAnalysis(null);
+      setAnalyzeError(null);
 
       // If no API key configured, simulate mock analysis with streaming
       if (!isApiAvailable) {
@@ -142,8 +143,9 @@ export default function AIPanel({
         return;
       }
 
-      // Real API call with existing useAnalyze hook
-      // (loading state handled by isAnalyzeLoading from useAnalyze)
+      // Real API call — show loading immediately
+      setAnalyzing(true, fileId);
+
       try {
         const response = await window.api.analyzeFile(fileId);
 
@@ -160,6 +162,8 @@ export default function AIPanel({
         setAnalyzeError('响应格式异常');
       } catch {
         setAnalyzeError('分析失败，请重试');
+      } finally {
+        setAnalyzing(false);
       }
     },
     [isAnalyzable, isApiAvailable, selectedFile, setAnalysisResult, setAnalyzing, setAnalyzeError],

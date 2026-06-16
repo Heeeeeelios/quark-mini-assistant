@@ -9,8 +9,17 @@ interface AnalysisResultProps {
 export default function AnalysisResult({
   result,
 }: AnalysisResultProps): ReactElement {
+  const isMock = result.source === 'mock';
+
   return (
     <div className="analysis-result">
+      {/* Mode label in header area */}
+      <div className="analysis-result__header">
+        <span className={`analysis-result__mode-badge ${isMock ? 'analysis-result__mode-badge--mock' : 'analysis-result__mode-badge--api'}`}>
+          {isMock ? '演示模式' : 'AI 分析'}
+        </span>
+      </div>
+
       {/* Summary card */}
       <div className="analysis-result__card">
         <h3 className="analysis-result__card-title">📝 摘要</h3>
@@ -31,10 +40,7 @@ export default function AnalysisResult({
 
       {/* Timing footer */}
       <div className="analysis-result__footer">
-        <span>AI 分析耗时 {result.analysisTimeMs > 0 ? `${(result.analysisTimeMs / 1000).toFixed(1)}s` : '—'}</span>
-        {result.source === 'mock' && (
-          <span className="analysis-result__mock-badge">演示模式（Mock 结果）</span>
-        )}
+        <span>分析耗时 {result.analysisTimeMs > 0 ? `${(result.analysisTimeMs / 1000).toFixed(1)}s` : '—'}</span>
       </div>
     </div>
   );

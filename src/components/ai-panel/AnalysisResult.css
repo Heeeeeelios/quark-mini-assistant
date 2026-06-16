@@ -7,6 +7,30 @@
   flex: 1;
 }
 
+/* ---- Header with mode badge ---- */
+.analysis-result__header {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: calc(-1 * var(--spacing-sm));
+}
+
+.analysis-result__mode-badge {
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.analysis-result__mode-badge--api {
+  background: var(--color-brand-light);
+  color: var(--color-brand);
+}
+
+.analysis-result__mode-badge--mock {
+  background: var(--color-bg-secondary);
+  color: var(--color-text-placeholder);
+}
+
 /* ---- Cards ---- */
 .analysis-result__card {
   background: var(--color-bg-primary);
@@ -51,11 +75,4 @@
   padding: var(--spacing-xs) var(--spacing-sm);
   font-size: 11px;
   color: var(--color-text-placeholder);
-}
-
-.analysis-result__mock-badge {
-  background: var(--color-bg-secondary);
-  padding: 2px 8px;
-  border-radius: var(--radius-sm);
-  font-size: 11px;
 }
