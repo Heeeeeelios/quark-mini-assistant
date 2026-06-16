@@ -237,6 +237,12 @@ ipcMain.handle('chat-completion', async (_event, params: { messages: Array<{ rol
     }
     mainWindow?.webContents.send('chat-done');
   } catch (err) {
+    console.error('[chat-completion] Raw error:', err);
+    console.error('[chat-completion] Error type:', typeof err);
+    console.error('[chat-completion] Error name:', err instanceof Error ? err.name : 'unknown');
+    console.error('[chat-completion] Error message:', err instanceof Error ? err.message : String(err));
+    console.error('[chat-completion] Error stack:', err instanceof Error ? err.stack : 'no stack');
+
     let errorMsg = '对话失败';
     if (err instanceof ApiError) {
       switch (err.code) {

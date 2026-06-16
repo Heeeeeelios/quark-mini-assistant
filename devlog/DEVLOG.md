@@ -973,3 +973,50 @@ const result = await aiService.analyzeFileWithContent(fileId, ext, content);
 → 拼接 system + user prompt → DashScope API
 → 返回分析结果
 ```
+
+---
+
+### [2026-06-16] 模式标签 + Loading 状态修复
+
+**问题 1：无模式标签**
+
+**修复**：AnalysisResult 组件新增模式标签，基于 `result.source` 字段：
+- `source === 'api'` → 橙色 "AI 分析" 标签
+- `source === 'mock'` → 灰色 "演示模式" 标签
+
+**问题 2：API 模式无 loading**
+
+**根因**：`handleAnalyze` 的 API 分支直接调用 `window.api.analyzeFile()` 但没有先调用 `setAnalyzing(true)`，导致 loading UI 从未触发。Mock 模式正常工作因为 `simulateMockAnalysis` 内部调用了 `setAnalyzing(true, fileId)`。
+
+**修复**：
+```typescript
+// 修复前（缺少 loading）
+try {
+  const response = await window.api.analyzeFile(fileId);
+  setAnalysisResult(fileId, response);
+}
+
+// 修复后
+setAnalyzing(true, fileId);
+try {
+  const response = await window.api.analyzeFile(fileId);
+  setAnalysisResult(fileId, response);
+} finally {
+  setAnalyzing(false);
+}
+```
+
+**完整链路**：
+```
+点击 AI 分析 → setAnalyzing(true) → 按钮 disabled + 骨架屏 loading
+→ await window.api.analyzeFile()
+→ setAnalysisResult() / setAnalyzeError()
+→ setAnalyzing(false) → 展示结果卡片（带模式标签）
+```
+
+**修改的文件**：
+| 文件 | 变更 |
+|------|------|
+| `src/components/ai-panel/AIPanel.tsx` | handleAnalyze 添加 setAnalyzing(true/false) |
+| `src/components/ai-panel/AnalysisResult.tsx` | 新增模式标签（API/Mock） |
+| `src/components/ai-panel/AnalysisResult.css` | 新增 mode-badge 样式 |
