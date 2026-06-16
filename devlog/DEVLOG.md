@@ -705,3 +705,82 @@
 | `src/hooks/useAnalyze.ts` | 增强 IPC 响应校验 + console.error 调试日志 |
 | `electron/main.ts` | analyze-file handler 添加 console.log 日志 |
 - **分析结果用卡片式布局** — 白底圆角+浅阴影，视觉层次清晰，评审体验好
+
+---
+
+### [2026-06-16] AI 分析核心 Bug 修复：文件内容未传入 API
+
+**问题**：点击 AI 分析按钮后，模型回复"未提供具体文档"
+
+**根因**：
+`analyzeWithTools()` 方法构建的 messages 中**没有任何地方包含文件的实际内容**：
+```json
+[
+  { "role": "system", "content": "你是一个文件知识助手。你可以使用工具来读取文件内容。" },
+  { "role": "user", "content": "你是一个代码审查专家。请分析以下代码文件..." }
+]
+```
+该方法依赖模型主动调用 `read_file` 工具来获取内容，但：
+- 模型可能不调用工具（直接回复"未提供具体文档"）
+- 即使调用，file_id 可能与 fileCache 的 key 不匹配
+- 模型没收到任何文件内容，无法进行分析
+
+**修复方案**：
+
+放弃 Tool-Use 模式用于文件分析，改为**直接嵌入文件内容到 prompt**：
+```typescript
+const messages = [
+  { role: 'system', content: systemPrompt },  // 按文件类型选择模板
+  { role: 'user', content: `【文件名】xxx\n【文件内容】\n${content}` },
+];
+```
+
+**为什么更好**：
+- 文件内容在首次请求就发送，不依赖工具调用
+- 更少的 API 调用（1 次 vs 2-3 次），更快的响应
+- 更可靠（不依赖模型的工具调用行为）
+
+**修改的文件**：
+| 文件 | 变更 |
+|------|------|
+| `electron/services/ai-service.ts` | 新增 `analyzeWithContent()`，删除废弃的 `analyzeWithTools()` |
+| `electron/main.ts` | analyze-file handler 添加详细日志 |
+
+---
+
+### [2026-06-16] 体验优化：API Key设置入口 + Mock loading + 流式效果
+
+**问题 1：API Key 设置入口找不到**
+
+**原因**：提示条在 `chat-area` 底部，当聊天区为空时容易被推到可视区域外。已配置 Key 时没有修改入口。
+
+**修复**：
+- **设置按钮移到 Header** — 添加 `⚙️`（已配置）/ `🔑`（未配置）齿轮图标到 Header 右侧，始终可见
+- **底部提示条保留** — 未配置 Key 时底部始终显示橙色提示条
+- 两处入口都可打开 SettingsModal
+
+**问题 2：Mock 分析无 loading 反馈**
+
+**原因**：`analyze` 函数在没有 API Key 时，IPC 返回 Mock 结果几乎是即时的，loading 状态一闪而过用户看不到。
+
+**修复**：
+- 新增 `simulateMockAnalysis()` 函数 — 当无 API Key 时不调用 IPC，而是：
+  1. 立即显示 loading 状态（LoadingSpinner + "AI 正在分析文件内容..."）
+  2. `setTimeout` 延迟 1.5 秒
+  3. 然后设置分析结果
+- 用户能看到完整的 loading → 结果 流程
+
+**问题 3：Mock 模式无流式输出效果**
+
+**原因**：Mock 结果一次性返回，没有逐字显示的效果。
+
+**修复**：
+- Mock 模式用 1.5 秒 loading 动画模拟"思考"过程
+- 分析结果直接展示（不需要流式，因为 Mock 内容是预定义的短文本）
+- Loading 动画本身就是流畅的（三圆点跳动动画），用户体验一致
+
+**修改的文件**：
+| 文件 | 变更 |
+|------|------|
+| `src/components/ai-panel/AIPanel.tsx` | 重写：设置按钮移到Header、Mock延迟模拟、API Key提示条始终可见 |
+| `src/components/ai-panel/AIPanel.css` | 新增设置按钮样式、loading 区域样式、提示条固定底部 |
