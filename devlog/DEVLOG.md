@@ -784,3 +784,72 @@ const messages = [
 |------|------|
 | `src/components/ai-panel/AIPanel.tsx` | 重写：设置按钮移到Header、Mock延迟模拟、API Key提示条始终可见 |
 | `src/components/ai-panel/AIPanel.css` | 新增设置按钮样式、loading 区域样式、提示条固定底部 |
+
+---
+
+### [2026-06-16] 体验优化：流式输出+错误细化+Tool-Use+交互增强
+
+**1. AI 分析流式输出**
+
+| 模式 | 实现 | 效果 |
+|------|------|------|
+| **真实 API** | SSE 流式（`onChatChunk` 事件逐 chunk 推送） | 文字逐字渲染，打字机效果 |
+| **Mock 模式** | `setInterval` 每 400ms 追加一句摘要/要点 | 模拟流式，loading → 逐句展示 → 完成 |
+
+**实现细节**：
+- `simulateMockAnalysis()` 先显示 1s loading，然后逐句流式输出
+- 使用 `setStreamedAnalysis` 状态在 loading 区域内显示流式预览
+- 完成后调用 `setAnalysisResult` 缓存结果
+
+**2. Tool-Use 调用展示**
+
+**新增 IPC 事件链**：
+```
+主进程 chatStream() 检测到 tool_call
+→ mainWindow.webContents.send('chat-tool-call', { toolName, args })
+→ preload.onToolCall()
+→ 前端 addToolCallEvent()
+→ ChatMessages 显示 ToolCallCard
+```
+
+**展示效果**：橙色提示卡片 "🔧 正在调用 read_file..."
+
+**3. 错误提示细化（核心决策）**
+
+**设计原则**：用户不应该看到技术细节（HTTP 状态码、API 错误码），只看到可操作的中文提示。
+
+**错误码映射表**：
+
+| API 错误码 | 用户提示 | 触发场景 |
+|-----------|----------|---------|
+| `AUTH_FAILED` | API Key 验证失败，请在设置中检查 Key 是否正确 | 401/403 响应 |
+| `RATE_LIMIT` | 请求频率过高或额度已用完，请稍后再试 | 429 响应 |
+| `TIMEOUT` | 请求超时，可能是文件过大或网络不稳定 | AbortSignal 超时 |
+| `NETWORK_ERROR` | 网络连接失败，请检查网络后重试 | fetch 失败 |
+| 其他 | 对话失败：{原始消息} | 未分类错误 |
+
+**双层映射**：
+- **主进程**：`ApiError.code` → 中文消息（在 IPC handler 中映射）
+- **渲染进程**：收到中文消息后，再用 `getErrorMessage()` 做模式匹配兜底
+
+**4. 交互优化**
+
+- `ChatInput` 改为 `forwardRef`，支持 `focus()` / `reset()`
+- 发送消息后 `requestAnimationFrame` 自动聚焦输入框
+- AI 回复中发送按钮显示 spinner + disabled
+- 切换文件时 `setStreamedAnalysis(null)` 清空上次分析预览
+- 未选文件时显示 "请先在左侧选择一个文件"引导文案
+
+**修改的文件**（10个）：
+| 文件 | 变更 |
+|------|------|
+| `electron/preload.ts` | 新增 `onToolCall` 事件桥接 |
+| `electron/main.ts` | 错误码→中文消息映射 |
+| `src/api/index.ts` | `onToolCall` 类型声明 |
+| `src/hooks/useAnalyze.ts` | 错误映射 |
+| `src/components/ai-panel/AIPanel.tsx` | 重写：流式分析、错误映射、工具监听 |
+| `src/components/ai-panel/AIPanel.css` | 流式预览样式 |
+| `src/components/ai-panel/ChatInput.tsx` | forwardRef + spinner |
+| `src/components/ai-panel/ChatInput.css` | spinner 动画 |
+| `src/components/ai-panel/ChatMessages.tsx` | ToolCallCard 组件 |
+| `src/components/ai-panel/ChatMessages.css` | 工具卡片样式增强 |

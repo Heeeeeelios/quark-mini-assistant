@@ -205,16 +205,17 @@ export class AIService {
    */
   setFileCache(nodes: FileNode[]): void {
     this.fileCache.clear();
-    function addNodes(n: FileNode[]) {
+    const addNodes = (n: FileNode[]) => {
       for (const node of n) {
         if (node.type === 'file' && node.content) {
-          self.fileCache.set(node.id, node);
+          this.fileCache.set(node.id, node);
+          console.log(`[setFileCache] Cached: ${node.id}, contentLength=${node.content.length}`);
         }
         if (node.children) addNodes(node.children);
       }
-    }
-    const self = this;
+    };
     addNodes(nodes);
+    console.log(`[setFileCache] Total files cached: ${this.fileCache.size}`);
   }
 
   // ---- F3: File analysis ----
@@ -237,10 +238,16 @@ export class AIService {
 
   private async analyzeWithContent(fileId: string): Promise<AnalysisResult> {
     const node = this.fileCache.get(fileId);
+    console.log(`[analyzeWithContent] fileId lookup: "${fileId}"`);
+    console.log(`[analyzeWithContent] Cache size: ${this.fileCache.size}`);
+    console.log(`[analyzeWithContent] Cache keys: ${Array.from(this.fileCache.keys()).join(', ')}`);
+    console.log(`[analyzeWithContent] Found node: ${node ? 'yes' : 'no'}`);
+    console.log(`[analyzeWithContent] Node content length: ${node?.content?.length ?? 'undefined'}`);
+
     const systemPrompt = this.getSystemPromptForFile(node);
     const content = node?.content ?? '（无法读取文件内容，文件可能为二进制格式）';
 
-    console.log(`[ai-service] analyzeWithContent: fileId=${fileId}, fileType=${node?.fileType}, contentLength=${content.length}`);
+    console.log(`[ai-service] analyzeWithContent: fileType=${node?.fileType}, contentLength=${content.length}`);
 
     const messages: ApiMessage[] = [
       { role: 'system', content: systemPrompt },
