@@ -113,7 +113,8 @@ ipcMain.handle('get-file-meta', async (_event, _fileId: string): Promise<unknown
 });
 
 ipcMain.handle('analyze-file', async (_event, fileId: string): Promise<unknown> => {
-  console.log('[analyze-file] Request for fileId:', fileId);
+  console.log('[analyze-file] Request received, fileId:', fileId);
+  console.log('[analyze-file] aiService:', aiService ? 'initialized' : 'null (no API key)');
   if (!aiService) {
     // No API key — return mock result
     console.log('[analyze-file] No API key configured, returning mock result');

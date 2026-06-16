@@ -223,17 +223,46 @@ export class AIService {
     const startTime = Date.now();
 
     try {
-      if (this.supportsFunctionCalling) {
-        const result = await this.analyzeWithTools(fileId);
-        result.analysisTimeMs = Date.now() - startTime;
-        return result;
-      }
-      const result = await this.analyzeWithManualPrompt(fileId);
+      // Direct approach: embed file content in prompt (more reliable than tool calls)
+      const result = await this.analyzeWithContent(fileId);
       result.analysisTimeMs = Date.now() - startTime;
       return result;
     } catch (err) {
+      console.error('[ai-service] analyzeFile error:', err);
       return this.fallbackAnalysis();
     }
+  }
+
+  // ---- Direct analysis: embed file content in prompt ----
+
+  private async analyzeWithContent(fileId: string): Promise<AnalysisResult> {
+    const node = this.fileCache.get(fileId);
+    const systemPrompt = this.getSystemPromptForFile(node);
+    const content = node?.content ?? '（无法读取文件内容，文件可能为二进制格式）';
+
+    console.log(`[ai-service] analyzeWithContent: fileId=${fileId}, fileType=${node?.fileType}, contentLength=${content.length}`);
+
+    const messages: ApiMessage[] = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: `【文件名】${node?.name ?? '未知'}\n【文件内容】\n${content}` },
+    ];
+
+    // Log the request for debugging
+    console.log('[ai-service] Request messages:', JSON.stringify(messages.map(m => ({
+      role: m.role,
+      content: m.content.length > 100 ? m.content.slice(0, 100) + '...' : m.content,
+    }))));
+
+    const response = await this.fetchWithRetry({
+      model: this.model,
+      messages,
+      temperature: 0.3,
+      max_tokens: 800,
+    });
+
+    console.log('[ai-service] Response received, content length:', response.choices?.[0]?.message?.content?.length ?? 0);
+
+    return this.parseAnalysisResponse(response.choices?.[0]?.message?.content ?? '');
   }
 
   // ---- F4: Streaming chat ----
@@ -255,76 +284,6 @@ export class AIService {
   private checkFunctionCallingSupport(): boolean {
     const supportedModels = ['qwen-plus', 'qwen-turbo', 'qwen-max'];
     return supportedModels.includes(this.model);
-  }
-
-  // ---- Tool-Use mode: analyze with tools ----
-
-  private async analyzeWithTools(fileId: string): Promise<AnalysisResult> {
-    const node = this.fileCache.get(fileId);
-    const systemPrompt = this.getSystemPromptForFile(node);
-
-    const messages: ApiMessage[] = [
-      { role: 'system', content: '你是一个文件知识助手。你可以使用工具来读取文件内容。' },
-      { role: 'user', content: systemPrompt },
-    ];
-
-    const response = await this.fetchWithRetry({
-      model: this.model,
-      messages,
-      tools: TOOLS,
-      temperature: 0.3,
-      max_tokens: 800,
-    });
-
-    // If the model calls tools
-    if (response.choices?.[0]?.message?.tool_calls) {
-      for (const toolCall of response.choices[0].message.tool_calls) {
-        const result = this.executeToolCall(toolCall);
-        messages.push({
-          role: 'assistant',
-          content: '',
-          tool_calls: [toolCall],
-        });
-        messages.push({
-          role: 'tool',
-          content: result,
-          tool_call_id: toolCall.id,
-        });
-      }
-
-      // Second call to get final analysis (without tools)
-      const finalResponse = await this.fetchWithRetry({
-        model: this.model,
-        messages,
-        temperature: 0.3,
-        max_tokens: 800,
-      });
-
-      return this.parseAnalysisResponse(finalResponse.choices?.[0]?.message?.content ?? '');
-    }
-
-    // Model answered directly without tools
-    return this.parseAnalysisResponse(response.choices?.[0]?.message?.content ?? '');
-  }
-
-  // ---- Manual prompt mode: analyze without tools ----
-
-  private async analyzeWithManualPrompt(fileId: string): Promise<AnalysisResult> {
-    const node = this.fileCache.get(fileId);
-    const content = node?.content ?? '无法读取该文件内容';
-    const systemPrompt = this.getSystemPromptForFile(node);
-
-    const response = await this.fetchWithRetry({
-      model: this.model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: content },
-      ],
-      temperature: 0.3,
-      max_tokens: 800,
-    });
-
-    return this.parseAnalysisResponse(response.choices?.[0]?.message?.content ?? '');
   }
 
   // ---- Fallback analysis ----
