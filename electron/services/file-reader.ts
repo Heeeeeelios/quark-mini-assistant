@@ -5,12 +5,23 @@ import { classifyFile } from '../utils/file-classify';
 const MAX_DEPTH = 2;
 const MAX_ITEMS = 100;
 const MAX_LINES = 200;
-const TEXT_EXTENSIONS = [
-  '.txt', '.md', '.json', '.js', '.ts', '.py', '.csv',
-  '.jsx', '.tsx', '.mjs', '.cjs', '.yaml', '.yml', '.xml',
-  '.html', '.css', '.scss', '.sh', '.bash', '.zsh',
-  '.toml', '.ini', '.cfg', '.conf', '.env', '.log',
-];
+const TEXT_EXTENSIONS = new Set([
+  // Plain text
+  '.txt', '.md', '.log',
+  // Data files
+  '.json', '.csv', '.yaml', '.yml', '.toml',
+  // Code files
+  '.js', '.ts', '.jsx', '.tsx', '.mjs', '.cjs',
+  '.py', '.rb', '.php', '.java', '.go', '.rs',
+  '.c', '.cpp', '.h', '.hpp', '.cs', '.swift', '.kt', '.scala',
+  // Config / markup
+  '.xml', '.html', '.htm', '.css', '.scss', '.less', '.sass',
+  '.sh', '.bash', '.zsh', '.fish', '.ps1',
+  '.ini', '.cfg', '.conf', '.env', '.properties',
+  '.sql', '.r', '.lua', '.pl', '.dart',
+  // Other text-like
+  '.svg', '.graphql', '.proto', '.thrift',
+]);
 
 export interface FileNode {
   id: string;
@@ -100,7 +111,7 @@ export async function readDirectory(
         };
 
         // Read content for text-based files
-        if (TEXT_EXTENSIONS.includes(ext)) {
+        if (TEXT_EXTENSIONS.has(ext)) {
           try {
             const raw = await fs.promises.readFile(fullPath, 'utf-8');
             const lines = raw.split('\n');

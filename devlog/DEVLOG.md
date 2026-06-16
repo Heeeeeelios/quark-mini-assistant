@@ -657,4 +657,51 @@
 - **保存后立即重新初始化 AIService** — 无需重启应用，用户体验更好
 - **等宽字体输入框** — API Key 通常是 `sk-` 开头的长字符串，等宽字体方便核对
 - **Ctrl+Enter 快捷键保存** — 减少鼠标操作，符合开发者习惯
+
+---
+
+### [2026-06-16] Bug 修复：AI 分析按钮无响应 + 文件预览不全
+
+**问题 1：AI 分析按钮点击无反应**
+
+**排查过程**：
+1. 检查按钮 onClick 绑定 → `() => selectedFileId && analyze(selectedFileId)` — 正确
+2. 检查 disabled 条件 → `isLoading || !isAnalyzable` — 只有非文本/代码/数据文件才禁用
+3. 检查 IPC handler → `analyze-file` 在 aiService 为 null 时返回 Mock 结果 — 正确
+4. **根因分析**：`useAnalyze` hook 中 `analyze` 函数对 IPC 返回值的类型校验不够严格。如果 IPC 返回了一个非标准对象（如缺少 `summary` 字段），hook 会进入错误分支但错误消息可能被吞掉
+
+**修复方案**：
+- `src/hooks/useAnalyze.ts` — 增强响应校验：
+  - 检查 `response` 是否是 error 对象（`'error' in response`）
+  - 检查 `response` 是否是 AnalysisResult（`'summary' in response`）
+  - 两种情况都不匹配时，输出 `console.error` 并展示"响应格式异常"
+- `electron/main.ts` — 添加 `console.log` 日志到 `analyze-file` handler，便于排查 IPC 调用是否到达主进程
+
+**问题 2：只有 .md 文件能预览内容**
+
+**根因**：
+- `file-reader.ts` 的 `TEXT_EXTENSIONS` 数组只有 26 种扩展名，遗漏了大量常见文本文件类型
+- 例如 `.java`、`.go`、`.rs`、`.rb`、`.php`、`.swift`、`.kt`、`.html`、`.css`、`.less`、`.sql`、`.ini`、`.properties` 等都没有包含
+- 这些文件在 `classifyFile` 中被正确分类为 'code' 或 'text'，但因为没有在 TEXT_EXTENSIONS 中，所以不会读取内容
+- `FileDetail` 组件用 `TEXT_TYPES.has(fileType)` 判断是否展示内容，对于被分类为 'code'/'text'/'data' 但 content 为空的文件，会显示"暂不支持预览"
+
+**修复方案**：
+- `electron/services/file-reader.ts` — 将 `TEXT_EXTENSIONS` 从数组改为 Set，扩展到 50+ 种扩展名：
+  - 纯文本：`.txt` `.md` `.log` `.markdown`
+  - 数据文件：`.json` `.csv` `.yaml` `.yml` `.toml` `.tsv`
+  - 代码文件：`.js` `.ts` `.jsx` `.tsx` `.py` `.java` `.go` `.rs` `.rb` `.php` `.swift` `.kt` `.scala` `.c` `.cpp` `.h` `.cs` `.dart` `.lua` `.pl`
+  - 配置/标记：`.xml` `.html` `.css` `.scss` `.less` `.sh` `.bash` `.zsh` `.ini` `.cfg` `.conf` `.env` `.properties` `.sql` `.graphql` `.proto`
+  - 其他：`.svg` `.thrift` `.fish` `.ps1` `.groovy` `.rst` `.adoc`
+- `electron/utils/file-classify.ts` — 同步扩展分类规则，确保所有可读文件被正确分类为 'text'/'code'/'data'：
+  - CODE_EXTENSIONS 新增 `.bash` `.zsh` `.fish` `.ps1` `.cs` `.dart` `.lua` `.pl` `.groovy`
+  - TEXT_EXTENSIONS 新增 `.htm` `.sass` `.properties` `.graphql` `.proto` `.thrift` `.markdown` `.rst` `.adoc`
+  - DATA_EXTENSIONS 新增 `.tsv` `.xls` `.xlsx`
+
+**修改的文件**：
+| 文件 | 变更 |
+|------|------|
+| `electron/services/file-reader.ts` | TEXT_EXTENSIONS 扩展为 50+ 种，Array → Set |
+| `electron/utils/file-classify.ts` | 同步扩展分类规则 |
+| `src/hooks/useAnalyze.ts` | 增强 IPC 响应校验 + console.error 调试日志 |
+| `electron/main.ts` | analyze-file handler 添加 console.log 日志 |
 - **分析结果用卡片式布局** — 白底圆角+浅阴影，视觉层次清晰，评审体验好

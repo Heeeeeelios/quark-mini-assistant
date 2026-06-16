@@ -113,8 +113,10 @@ ipcMain.handle('get-file-meta', async (_event, _fileId: string): Promise<unknown
 });
 
 ipcMain.handle('analyze-file', async (_event, fileId: string): Promise<unknown> => {
+  console.log('[analyze-file] Request for fileId:', fileId);
   if (!aiService) {
     // No API key — return mock result
+    console.log('[analyze-file] No API key configured, returning mock result');
     return {
       summary: '当前未配置 API Key，已切换至演示模式。此为 Mock 分析结果。',
       keyPoints: ['配置 DASHSCOPE_API_KEY 环境变量后可获得真实 AI 分析结果'],
@@ -124,8 +126,11 @@ ipcMain.handle('analyze-file', async (_event, fileId: string): Promise<unknown> 
   }
 
   try {
-    return await aiService.analyzeFile(fileId);
+    const result = await aiService.analyzeFile(fileId);
+    console.log('[analyze-file] AI service result:', result.source);
+    return result;
   } catch (err) {
+    console.error('[analyze-file] AI service error:', err);
     if (err instanceof ApiError) {
       return { error: { code: err.code, message: err.message } };
     }
